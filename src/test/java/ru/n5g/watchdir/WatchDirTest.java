@@ -23,7 +23,7 @@ public class WatchDirTest
     private final static String TEST_DIR = getTestFolder();
     private Path path = Paths.get(TEST_DIR + "test.txt");
     private WatchDir watchDir;
-    private WatchDir.Listener listener = mock(WatchDir.Listener.class);
+    private FileChangeListener listener = mock(FileChangeListener.class);
 
     private static String getTestFolder()
     {
@@ -70,12 +70,14 @@ public class WatchDirTest
         watchDir.start();
 
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(path));
 
         String underDir = TEST_DIR + "underDir" + File.separator;
         FileUtils.forceMkdir(new File(underDir));
         FileUtils.touch(new File(underDir + "file1.txt"));
-        verify(listener, timeout(100).never()).doChange(eq(Paths.get(underDir + "file1.txt")), any(Boolean.class));
+        verify(listener, timeout(100).never()).fileModified(eq(Paths.get(underDir + "file1.txt")));
+
+        watchDir.stop();
     }
 
     @Test
@@ -86,12 +88,14 @@ public class WatchDirTest
         watchDir.start();
 
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(path));
 
         String underDir = TEST_DIR + "underDir" + File.separator;
         FileUtils.forceMkdir(new File(underDir));
         FileUtils.touch(new File(underDir + "file1.txt"));
-        verify(listener, timeout(100).never()).doChange(eq(Paths.get(underDir + "file1.txt")), any(Boolean.class));
+        verify(listener, timeout(100).never()).fileModified(eq(Paths.get(underDir + "file1.txt")));
+
+        watchDir.stop();
     }
 
     /**
@@ -104,7 +108,7 @@ public class WatchDirTest
     {
         watchDir.start();
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(path));
 
         StringBuilder customTestPath = new StringBuilder();
         customTestPath.append(System.getProperty("user.home"));
@@ -124,9 +128,11 @@ public class WatchDirTest
         watchDir.addPath(newPath);
         String newFile = newPath + "testFile2.txt";
         FileUtils.touch(new File(newFile));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(Paths.get(newFile)), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(Paths.get(newFile)));
 
         FileUtils.forceDelete(testDir);
+
+        watchDir.stop();
     }
 
     /**
@@ -146,26 +152,26 @@ public class WatchDirTest
     public void testRestartMonitoring() throws Exception
     {
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).never()).doChange(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).never()).fileModified(eq(path));
 
         reset(listener);
         watchDir.start();
 
         FileUtils.forceDelete(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doChange(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileModified(eq(path));
 
         reset(listener);
         watchDir.stop();
 
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).never()).doChange(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).never()).fileModified(eq(path));
 
         reset(listener);
         watchDir.start();
 //        Thread.sleep(100);
 
         FileUtils.forceDelete(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doChange(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileModified(eq(path));
 
         watchDir.stop();
     }
@@ -182,7 +188,9 @@ public class WatchDirTest
         watchDir.start();
 
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(path), eq(false));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(path));
+
+        watchDir.stop();
     }
 
     /**
@@ -199,7 +207,9 @@ public class WatchDirTest
         path = Paths.get(TEST_DIR + "testFolder");
 
         FileUtils.forceMkdir(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(path), eq(true));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(path));
+
+        watchDir.stop();
     }
 
     /**
@@ -214,7 +224,9 @@ public class WatchDirTest
         watchDir.start();
 
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(path));
+
+        watchDir.stop();
     }
 
     /**
@@ -231,7 +243,13 @@ public class WatchDirTest
         watchDir.start();
 
         FileUtils.write(new File(path.toString()), "test");
-        verify(listener, timeout(100).atLeast(1)).doChange(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileModified(eq(path));
+
+        reset(listener);
+        FileUtils.write(new File(path.toString()), "test2");
+        verify(listener, timeout(100).atLeast(1)).fileModified(eq(path));
+
+        watchDir.stop();
     }
 
     /**
@@ -244,11 +262,12 @@ public class WatchDirTest
     public void testEventOnDelete() throws Exception
     {
         FileUtils.touch(new File(path.toString()));
-
         watchDir.start();
-        Thread.sleep(100);
-        FileUtils.forceDelete(new File(path.toString()));
-        verify(listener, timeout(500).atLeast(1)).doDelete(eq(path), any(Boolean.class));
+
+        assertTrue(new File(path.toString()).delete());
+        verify(listener, timeout(100).atLeast(1)).fileDeleted(eq(path));
+
+        watchDir.stop();
     }
 
     /**
@@ -260,12 +279,12 @@ public class WatchDirTest
     public void testStartMonitoring() throws Exception
     {
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).never()).doChange(any(Path.class), any(Boolean.class));
+        verify(listener, timeout(100).never()).fileModified(any(Path.class));
 
         watchDir.start();
 
         FileUtils.forceDelete(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doChange(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileModified(eq(path));
 
         watchDir.stop();
     }
@@ -276,13 +295,13 @@ public class WatchDirTest
         watchDir.start();
 
         FileUtils.touch(new File(path.toString()));
-        verify(listener, timeout(100).atLeast(1)).doCreate(eq(path), any(Boolean.class));
+        verify(listener, timeout(100).atLeast(1)).fileCreated(eq(path));
 
         reset(listener);
         watchDir.stop();
 
         FileUtils.forceDelete(new File(path.toString()));
-        verify(listener, timeout(100).never()).doChange(any(Path.class), any(Boolean.class));
+        verify(listener, timeout(100).never()).fileModified(any(Path.class));
     }
 
     @Test
